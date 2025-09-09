@@ -1,604 +1,638 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Audio → MIDI (Hum & Pro Separation)</title>
+  <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Audio → MIDI (Matrix Edition)</title>
   <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; padding: 20px; max-width:1000px; margin:auto; }
-    h1 { margin-bottom:6px }
-    .panel { border:1px solid #ddd; padding:12px; border-radius:8px; margin:10px 0; background:#fafafa; }
-    label { display:block; margin:8px 0 4px; font-weight:600 }
-    button { margin-right:8px }
-    .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap }
-    .small { font-size:0.9em; color:#666 }
-    .stem-list a { display:block; margin:6px 0 }
-    .progress { width:100%; background:#eee; height:10px; border-radius:6px; overflow:hidden }
-    .progress > div { height:100%; width:0%; background:linear-gradient(90deg,#4caf50,#8bc34a) }
-    input[type=file] { font-size:0.9em }
+    /* MATRIX THEME + Modern UI */
+    :root{
+      --bg:#020202;
+      --panel:#07120b;
+      --accent:#00ff7f;
+      --muted:#3a3f3a;
+      --glass: rgba(255,255,255,0.03);
+      --radius: 12px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Segoe UI Mono", "Helvetica Neue", monospace;
+    }
+    html,body{height:100%; margin:0; background:
+      radial-gradient(ellipse at center, rgba(0,32,0,0.08), transparent 20%),
+      linear-gradient(180deg, #021 0%, #000 100%); color:#bfffbf; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; -webkit-font-smoothing:antialiased;}
+    main{max-width:1100px; margin:28px auto; padding:20px; }
+    header{display:flex;align-items:center; gap:16px; margin-bottom:18px;}
+    h1{margin:0; font-size:20px; letter-spacing:0.6px}
+    .subtitle{color:var(--muted); font-size:13px;}
+    .grid{display:grid; grid-template-columns: 420px 1fr; gap:18px;}
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:1px solid rgba(0,255,127,0.06); padding:16px; border-radius:var(--radius); box-shadow: 0 6px 20px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.02);}
+    label{display:block; font-weight:600; color:#bfffbf; margin-bottom:8px; font-size:13px}
+    select,input[type=number], input[type=text], input[type=file]{background:transparent; border:1px solid rgba(255,255,255,0.06); color:#bfffbf; padding:8px 10px; border-radius:8px; outline:none; width:100%}
+    .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+    button{background:linear-gradient(90deg,#063d27,#0b7a4a); color:#001; border:none; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700; box-shadow: 0 4px 12px rgba(0,0,0,0.6); transition:transform .08s ease, box-shadow .08s;}
+    button.secondary{background:transparent; color:var(--accent); border:1px solid rgba(0,255,127,0.12)}
+    button:active{transform:translateY(1px)}
+    small.note{display:block; color:#8fbf8f; margin-top:6px}
+    .status{font-family:var(--mono); color:var(--accent); font-size:13px}
+    .log{background:transparent; color:#bfffbf; margin-top:10px; font-size:13px}
+    .controls{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px}
+    .progress{height:10px; background:rgba(0,0,0,0.3); border-radius:10px; overflow:hidden; border:1px solid rgba(255,255,255,0.02)}
+    .progress > div{height:100%; width:0%; background:linear-gradient(90deg, rgba(0,255,127,0.2), rgba(0,255,127,0.6)); transition:width .3s ease}
+    .stems a{display:block; margin:6px 0; color:var(--accent); text-decoration:none; font-weight:600}
+    footer{margin-top:18px; color:var(--muted); font-size:13px}
+    /* subtle matrix vertical lines background */
+    body::after{content:''; position:fixed; inset:0; background-image:
+      linear-gradient(rgba(0,255,127,0.02) 1px, transparent 1px);
+      background-size: 1px 24px; pointer-events:none; opacity:0.06}
+    @media(max-width:900px){
+      .grid{grid-template-columns:1fr; }
+      header{flex-direction:column; align-items:flex-start; gap:6px}
+    }
   </style>
 </head>
 <body>
-  <h1>Audio → MIDI (Hum & Pro Separation)</h1>
-  <p class="small">Two main modes — <strong>Hum</strong> for quick idea capture, and <strong>Song</strong> for recording or uploading songs. You can optionally run server-side source separation (Spleeter) to get high-quality stems; the browser will then transcribe each stem to MIDI and let you download desired MIDI files.</p>
-
-  <div class="panel">
-    <label>Mode</label>
-    <div class="row">
-      <select id="modeSelect">
-        <option value="hum">Hum / Whistle</option>
-        <option value="song">Song (record or upload)</option>
-      </select>
-
-      <label style="margin-left:12px">Tempo (BPM)</label>
-      <input id="bpm" type="number" value="120" min="20" max="300" style="width:90px" />
-
-      <label style="margin-left:12px">Quantize (ms)</label>
-      <input id="quantizeMs" type="number" value="120" min="10" max="2000" style="width:90px" />
-    </div>
-  </div>
-
-  <div id="humPanel" class="panel">
-    <h3>Hum / Whistle Mode</h3>
-    <p class="small">Sing into your microphone. The system detects pitch and exports a tuned MIDI file suitable for GarageBand.</p>
-    <div class="row">
-      <button id="humStart">Start Listening</button>
-      <button id="humStop" disabled>Stop & Generate MIDI</button>
-      <button id="humPlay" disabled>Play Detected (Preview)</button>
-      <a id="humDownload" style="display:none"></a>
-      <span id="humStatus"></span>
-    </div>
-    <div id="humLog" style="margin-top:8px"></div>
-  </div>
-
-  <div id="songPanel" class="panel" style="display:none">
-    <h3>Song Mode</h3>
-    <p class="small">Provide an audio source and choose whether to use server-side separation (recommended for multi-instrument songs).</p>
-
-    <div class="row">
-      <label>Source</label>
-      <select id="songSource">
-        <option value="display">Capture system audio (tab/app) — desktop only</option>
-        <option value="mic">Microphone</option>
-        <option value="upload">Upload file (mp3/wav)</option>
-      </select>
-
-      <label style="margin-left:12px">Output</label>
-      <select id="songOutputMode">
-        <option value="single">Single combined MIDI</option>
-        <option value="separate">Separate (per stem/instrument)</option>
-      </select>
-
-      <label style="margin-left:12px">Server separation?</label>
-      <select id="useServerSeparation">
-        <option value="no">No — process in-browser only</option>
-        <option value="yes">Yes — upload to server (Spleeter) & return stems</option>
-      </select>
-    </div>
-
-    <div id="uploadRow" style="margin-top:8px; display:none">
-      <input id="uploadFile" type="file" accept="audio/*" />
-    </div>
-
-    <div style="margin-top:8px" class="row">
-      <button id="songStart">Start Capture / Upload</button>
-      <button id="songStop" disabled>Stop</button>
-      <span id="songStatus"></span>
-    </div>
-
-    <div style="margin-top:8px" class="panel">
-      <h4>Separation / Stems (if server selected)</h4>
-      <div class="row">
-        <label>Server URL</label>
-        <input id="serverUrl" type="text" value="http://localhost:3000" style="width:40%" />
-        <label style="margin-left:12px">Spleeter mode</label>
-        <select id="spleeterMode"><option value="2stems">2stems (vocals+accompaniment)</option><option value="4stems">4stems</option><option value="5stems">5stems</option></select>
+  <main>
+    <header>
+      <div>
+        <h1>Audio → MIDI <span style="color:var(--accent)">Matrix</span></h1>
+        <div class="subtitle">Hum / Record / Upload — server separation optional. Exports .mid for GarageBand.</div>
       </div>
-      <div style="margin-top:8px" class="small">After separation you'll see stem preview buttons and checkboxes to pick which stems you want transcribed to MIDI.</div>
-      <div style="margin-top:8px" class="progress" id="serverProgress"><div></div></div>
-      <div id="stemsContainer" class="stem-list"></div>
+      <div style="margin-left:auto" class="status" id="topStatus">Ready</div>
+    </header>
+
+    <div class="grid">
+      <!-- Left column: controls -->
+      <div class="panel">
+        <label>Mode</label>
+        <div class="row">
+          <select id="modeSelect">
+            <option value="hum">Hum / Whistle</option>
+            <option value="song">Song (record / upload)</option>
+          </select>
+          <div style="width:10px"></div>
+          <label style="min-width:120px">Tempo (BPM)</label>
+          <input id="bpm" type="number" value="120" min="20" max="300" style="width:110px"/>
+        </div>
+
+        <label style="margin-top:12px">Quantize (ms)</label>
+        <input id="quantizeMs" type="number" value="120" min="10" max="2000" />
+
+        <div id="humPanel" style="margin-top:14px">
+          <label>Hum / Whistle Mode</label>
+          <div class="row controls">
+            <button id="humStart">Start Listening</button>
+            <button id="humStop" class="secondary" disabled>Stop & Generate</button>
+            <button id="humPlay" class="secondary" disabled>Preview</button>
+            <a id="humDownload" style="display:none"></a>
+          </div>
+          <div class="log" id="humLog"></div>
+        </div>
+
+        <div id="songPanel" style="display:none; margin-top:14px">
+          <label>Song Mode</label>
+          <div class="row">
+            <select id="songSource">
+              <option value="display">System audio (desktop only)</option>
+              <option value="mic">Microphone</option>
+              <option value="upload">Upload file (mp3/wav)</option>
+            </select>
+            <select id="songOutputMode">
+              <option value="single">Single MIDI</option>
+              <option value="separate">Separate / per stem</option>
+            </select>
+          </div>
+
+          <div style="margin-top:10px" class="row">
+            <label style="min-width:120px">Server Separation?</label>
+            <select id="useServerSeparation">
+              <option value="no">No — client only</option>
+              <option value="yes">Yes — upload to Spleeter server</option>
+            </select>
+          </div>
+
+          <div id="uploadRow" style="display:none; margin-top:10px">
+            <input id="uploadFile" type="file" accept="audio/*" />
+          </div>
+
+          <div class="row controls" style="margin-top:10px">
+            <button id="songStart">Start / Upload</button>
+            <button id="songStop" class="secondary" disabled>Stop</button>
+          </div>
+
+          <div style="margin-top:10px">
+            <label>Separation Server URL (if used)</label>
+            <input id="serverUrl" type="text" value="http://localhost:3000" />
+            <div style="margin-top:8px" class="row">
+              <label style="min-width:120px">Spleeter mode</label>
+              <select id="spleeterMode"><option value="2stems">2stems</option><option value="4stems">4stems</option><option value="5stems">5stems</option></select>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right column: info, stems, progress -->
+      <div class="panel">
+        <div class="row" style="justify-content:space-between; align-items:center">
+          <div>
+            <div style="font-weight:700; font-size:15px">Processing</div>
+            <small class="small note">Use the server for best stem quality. Client fallback will still work for simple recordings.</small>
+          </div>
+          <div id="statusBox" class="status">Idle</div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="progress" aria-hidden><div id="progressBar"></div></div>
+        </div>
+
+        <div style="margin-top:12px" id="stemsArea">
+          <div style="font-weight:700">Stems & Downloads</div>
+          <div id="stemsContainer" class="stems"></div>
+        </div>
+
+        <div style="margin-top:14px" id="logArea">
+          <div style="font-weight:700">Log</div>
+          <div id="mainLog" class="log">No activity yet.</div>
+        </div>
+
+        <footer>
+          <div>Tip: For best results upload an MP3/WAV or use system capture on desktop. Mobile browsers sometimes block tab/system capture — use upload for highest fidelity.</div>
+        </footer>
+      </div>
     </div>
-
-    <div id="songLog" style="margin-top:8px"></div>
-  </div>
-
-  <div class="panel">
-    <h3>Tutorial / GarageBand import</h3>
-    <ol>
-      <li>For quick ideas: <strong>Hum</strong>. For full songs: use <strong>Song → Upload file</strong> or <strong>Capture system audio</strong> (desktop). For accurate stems choose <strong>Server separation (Spleeter)</strong>.</li>
-      <li>Press Start, let it record/process, then select stems and click the generated download links (the site will create one or many `.mid` files you can download).</li>
-      <li>Open GarageBand → File → Import → select the `.mid`. It will import notes and map instruments to tracks. If notes look off, increase audio quality or use file upload rather than mic capture.</li>
-    </ol>
-  </div>
-
-  <div class="panel small">
-    <h4>Notes & Limitations</h4>
-    <ul>
-      <li>Spleeter is free open-source but requires Python + TensorFlow; run it on your server or local machine.</li>
-      <li>System audio capture (getDisplayMedia) is desktop-only in most browsers. Mobile phones rarely allow direct system capture.</li>
-      <li>Client-side separate-by-band (no server) is approximate; server separation delivers much better stems.</li>
-    </ul>
-  </div>
-
-  <!-- MidiWriterJS -->
-  <script src="https://cdn.jsdelivr.net/npm/midiwriter-js@2.1.1/dist/MidiWriter.min.js"></script>
+  </main>
 
   <script>
-  // ------------------ Utilities & MIDI functions ------------------
-  const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  function midiToNoteName(m) {
-    const name = NOTE_NAMES[(m%12+12)%12];
-    const octave = Math.floor(m/12) - 1;
-    return name + octave;
-  }
-  function freqToMidi(f) { return Math.round(69 + 12 * Math.log2(f / 440)); }
-  function nearestDurationLabel(qBeats) {
-    const candidates = { '1':4, '2':2, '4':1, '8':0.5, '16':0.25, '32':0.125 };
-    let bestLabel='4', minDiff=Infinity;
-    for (let label in candidates) {
-      const diff = Math.abs(qBeats - candidates[label]);
-      if (diff < minDiff) { minDiff = diff; bestLabel = label; }
+  // ---------------- Utility: small MIDI builder (no external libs) ----------------
+  // Builds a simple single-track MIDI file (Format 0). Returns a Blob.
+  function writeVarLen(value) {
+    // write value as MIDI variable length bytes (MSB continuation)
+    const bytes = [];
+    let buffer = value & 0x7F;
+    value >>= 7;
+    while (value > 0) {
+      buffer <<= 8;
+      buffer |= ((value & 0x7F) | 0x80);
+      value >>= 7;
     }
-    return bestLabel;
+    // now split buffer into bytes
+    for (;;) {
+      bytes.push(buffer & 0xFF);
+      if (buffer & 0x80) buffer >>= 8;
+      else break;
+    }
+    return bytes;
   }
 
-  // Autocorrelation pitch detection (robust)
-  function autoCorrelate(buffer, sampleRate) {
+  function intToBytesBE(val, bytes) {
+    const out = [];
+    for (let i = bytes-1; i>=0; i--) {
+      out.push((val >> (8*i)) & 0xFF);
+    }
+    return out;
+  }
+
+  function buildMidiFromNotesSimple(noteSequence, bpm=120) {
+    // noteSequence: [{midi, startTime, endTime}] with seconds
+    // Convert to a single-track MIDI (format 0), ticksPerQuarter = 480
+    const ticksPerQuarter = 480;
+    const header = [];
+    header.push(...[0x4d,0x54,0x68,0x64]); // MThd
+    header.push(...intToBytesBE(6,4)); // header length
+    header.push(...intToBytesBE(0,2)); // format 0
+    header.push(...intToBytesBE(1,2)); // one track
+    header.push(...intToBytesBE(ticksPerQuarter,2));
+
+    // Build track events
+    // We'll create NoteOn and NoteOff events using delta times in ticks.
+    // Steps:
+    // 1) sort noteSequence by startTime
+    if (!noteSequence || noteSequence.length===0) {
+      // empty MIDI - return a small empty track
+      const emptyTrack = [];
+      emptyTrack.push(...[0x00,0xFF,0x2F,0x00]); // end of track
+      const trk = [0x4d,0x54,0x72,0x6b]; // MTrk
+      trk.push(...intToBytesBE(emptyTrack.length,4));
+      trk.push(...emptyTrack);
+      const arr = new Uint8Array([...header, ...trk]);
+      return new Blob([arr], {type:'audio/midi'});
+    }
+
+    noteSequence = noteSequence.slice().sort((a,b)=>a.startTime - b.startTime);
+
+    // convert to a list of events: {time(ticks), type:'on'/'off', note, vel}
+    const events = [];
+    const mpq = Math.round(60000000 / bpm);
+    // tempo meta event will be placed at start
+    for (let n of noteSequence) {
+      const startTicks = Math.round(n.startTime / (60 / bpm) * ticksPerQuarter);
+      const durSec = Math.max(0.02, n.endTime - n.startTime);
+      const durTicks = Math.max(1, Math.round(durSec / (60 / bpm) * ticksPerQuarter));
+      events.push({time:startTicks, type:'on', note:n.midi, vel:100});
+      events.push({time:startTicks + durTicks, type:'off', note:n.midi, vel:0});
+    }
+    // sort events by time, on before off if same time (so chord on/off are proper)
+    events.sort((a,b)=> (a.time - b.time) || ((a.type==='on' && b.type==='off') ? -1 : 1));
+
+    // Build track bytes
+    const trackBytes = [];
+    // delta-time 0, tempo meta event
+    trackBytes.push(...[0x00, 0xFF, 0x51, 0x03, ...intToBytesBE(mpq,3)]);
+    // optional program change (channel 0) to acoustic piano
+    trackBytes.push(...[0x00, 0xC0, 0x00]);
+
+    let lastTick = 0;
+    for (let ev of events) {
+      const delta = ev.time - lastTick;
+      lastTick = ev.time;
+      const varlen = writeVarLen(delta);
+      trackBytes.push(...varlen);
+      if (ev.type === 'on') {
+        // Note On on channel 0: 0x90, note, vel
+        trackBytes.push(0x90, ev.note & 0x7F, ev.vel & 0x7F);
+      } else {
+        // Note Off: 0x80, note, vel
+        trackBytes.push(0x80, ev.note & 0x7F, ev.vel & 0x7F);
+      }
+    }
+    // End of track
+    trackBytes.push(...[0x00, 0xFF, 0x2F, 0x00]);
+
+    const trkChunk = [0x4d,0x54,0x72,0x6b, ...intToBytesBE(trackBytes.length,4), ...trackBytes];
+    const full = new Uint8Array([...header, ...trkChunk]);
+    return new Blob([full], {type:'audio/midi'});
+  }
+
+  // ---------------- Pitch detection (autocorrelation) & helpers ----------------
+  function autoCorrelateFloat(buffer, sampleRate) {
     const SIZE = buffer.length;
-    let rms=0; for (let i=0;i<SIZE;i++) rms += buffer[i]*buffer[i];
-    rms = Math.sqrt(rms/SIZE);
+    let rms = 0;
+    for (let i=0;i<SIZE;i++) rms += buffer[i]*buffer[i];
+    rms = Math.sqrt(rms / SIZE);
     if (rms < 0.005) return -1;
-    let r1=0,r2=SIZE-1,thresh=0.2;
-    for (let i=0;i<SIZE/2;i++) if (Math.abs(buffer[i])<thresh) { r1=i; break; }
-    for (let i=1;i<SIZE/2;i++) if (Math.abs(buffer[SIZE-i])<thresh) { r2=SIZE-i; break; }
-    buffer = buffer.slice(r1,r2);
+    let r1=0, r2=SIZE-1, thresh=0.2;
+    for (let i=0;i<SIZE/2;i++) if (Math.abs(buffer[i]) < thresh) { r1 = i; break; }
+    for (let i=1;i<SIZE/2;i++) if (Math.abs(buffer[SIZE - i]) < thresh) { r2 = SIZE - i; break; }
+    buffer = buffer.slice(r1, r2);
     const newSize = buffer.length;
     const c = new Array(newSize).fill(0);
-    for (let i=0;i<newSize;i++) for (let j=0;j<newSize-i;j++) c[i]+=buffer[j]*buffer[j+i];
-    let d=0; while (c[d] > c[d+1]) d++;
-    let maxval=-1,maxpos=-1;
-    for (let i=d;i<newSize;i++) if (c[i] > maxval) { maxval=c[i]; maxpos=i; }
+    for (let i=0;i<newSize;i++) {
+      for (let j=0;j<newSize - i;j++) c[i] += buffer[j] * buffer[j + i];
+    }
+    let d = 0;
+    while (d < newSize -1 && c[d] > c[d+1]) d++;
+    let maxpos = -1, maxval = -1;
+    for (let i=d;i<newSize;i++) {
+      if (c[i] > maxval) { maxval = c[i]; maxpos = i; }
+    }
     if (maxpos <= 0) return -1;
     const T0 = maxpos;
     const freq = sampleRate / T0;
     if (!isFinite(freq) || freq <= 0 || freq > 10000) return -1;
     return freq;
   }
-
-  function buildMidiFromNotes(noteSequence, bpm=120) {
-    const track = new MidiWriter.Track();
-    track.setTempo(bpm);
-    track.addEvent(new MidiWriter.ProgramChangeEvent({instrument:1}));
-    noteSequence.sort((a,b)=>a.startTime - b.startTime);
-    for (let n of noteSequence) {
-      const durSec = Math.max(0.02, n.endTime - n.startTime);
-      const qBeats = durSec * (bpm / 60);
-      const durationLabel = nearestDurationLabel(qBeats);
-      const pitchName = midiToNoteName(n.midi);
-      const evt = new MidiWriter.NoteEvent({pitch:[pitchName], duration: durationLabel});
-      track.addEvent(evt);
-    }
-    const writer = new MidiWriter.Writer(track);
-    return writer.buildFile(); // returns base64 string in this lib
+  function freqToMidi(f) { return Math.round(69 + 12 * Math.log2(f / 440)); }
+  function midiToName(m) {
+    const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const name = names[(m%12+12)%12];
+    const oct = Math.floor(m/12) - 1;
+    return name + oct;
   }
 
-  // create Blob from base64 or Uint8
-  function midiDataToBlob(midiData) {
-    if (typeof midiData === 'string') {
-      const binStr = atob(midiData);
-      const len = binStr.length;
-      const arr = new Uint8Array(len);
-      for (let i=0;i<len;i++) arr[i]=binStr.charCodeAt(i);
-      return new Blob([arr], {type:'audio/midi'});
-    } else {
-      return new Blob([midiData], {type:'audio/midi'});
-    }
-  }
-
-  // ------------------ Preview util (simple oscillator) ------------------
-  function previewSequence(noteSequence, bpm=120) {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    let now = ctx.currentTime + 0.1;
-    if (!noteSequence || noteSequence.length===0) return;
-    const base = noteSequence[0].startTime;
-    for (let n of noteSequence) {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const freq = 440 * Math.pow(2, (n.midi - 69)/12);
-      osc.frequency.value = freq;
-      osc.type = 'sine';
-      gain.gain.value = 0.08;
-      osc.connect(gain).connect(ctx.destination);
-      const start = now + (n.startTime - base);
-      const dur = Math.max(0.05, n.endTime - n.startTime);
-      osc.start(start); osc.stop(start + dur);
-    }
-    // auto close context after n seconds
-    setTimeout(()=>ctx.close(), Math.max(2000, (noteSequence[noteSequence.length-1].endTime - base)*1000 + 1000));
-  }
-
-  // ------------------ UI Logic (Hum) ------------------
-  (function(){
-    const humStartBtn = document.getElementById('humStart');
-    const humStopBtn  = document.getElementById('humStop');
-    const humPlayBtn  = document.getElementById('humPlay');
-    const humStatus   = document.getElementById('humStatus');
-    const humLog      = document.getElementById('humLog');
-    const humDownload = document.getElementById('humDownload');
-
-    let audioCtx, analyser, source, mediaStream;
-    let rafId;
-    let bufferLength = 2048;
-    let dataArray = new Float32Array(bufferLength);
-    let detectedNotes = [];
-    let startTimeBase = 0;
-
-    async function startListening() {
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (e) { humStatus.innerText = 'Mic permission denied or unavailable.'; return; }
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      source = audioCtx.createMediaStreamSource(mediaStream);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = bufferLength;
-      source.connect(analyser);
-      detectedNotes = [];
-      startTimeBase = audioCtx.currentTime;
-      humStartBtn.disabled = true; humStopBtn.disabled = false; humPlayBtn.disabled = true; humDownload.style.display='none';
-      humStatus.innerText = 'Listening...';
-      watchPitch();
-    }
-
-    function stopAndMakeMidi() {
-      if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop());
-      if (audioCtx) audioCtx.close();
-      cancelAnimationFrame(rafId);
-      humStartBtn.disabled=false; humStopBtn.disabled=true;
-      humStatus.innerText = 'Stopped. Building MIDI...';
-      const qMs = parseInt(document.getElementById('quantizeMs').value||120,10);
-      for (let n of detectedNotes) {
-        n.startTime = Math.round(n.startTime*1000/qMs)*qMs/1000;
-        n.endTime   = Math.round(n.endTime*1000/qMs)*qMs/1000;
-        if (n.endTime <= n.startTime) n.endTime = n.startTime + qMs/1000;
-      }
-      if (detectedNotes.length === 0) { humStatus.innerText = 'No notes detected.'; humLog.innerText=''; return; }
-      try {
-        const midiData = buildMidiFromNotes(detectedNotes, parseInt(document.getElementById('bpm').value||120,10));
-        const blob = midiDataToBlob(midiData);
-        const url  = URL.createObjectURL(blob);
-        humDownload.href = url; humDownload.download='hum_capture.mid'; humDownload.style.display='inline-block'; humDownload.innerText='Download .mid';
-        humPlayBtn.disabled=false; humStatus.innerText='Done — download ready.'; humLog.innerText = 'Detected notes: ' + detectedNotes.map(n=>midiToNoteName(n.midi)).join(' ');
-      } catch (e) { humStatus.innerText = 'MIDI build error: ' + e.message; }
-    }
-
-    function watchPitch() {
-      const sampleRate = audioCtx.sampleRate;
-      let pending = null, lastMidi = null;
-      const step = () => {
-        analyser.getFloatTimeDomainData(dataArray);
-        const freq = autoCorrelate(dataArray, sampleRate);
-        const tNow = audioCtx.currentTime - startTimeBase;
-        if (freq > 0) {
-          const midi = freqToMidi(freq);
-          if (midi >= 21 && midi <= 108) {
-            if (!pending) pending = {midi:midi, startTime:tNow, endTime:tNow+0.02};
-            else {
-              if (Math.abs(pending.midi - midi) > 1) { detectedNotes.push(Object.assign({}, pending)); pending = {midi:midi, startTime:tNow, endTime:tNow+0.02}; }
-              else pending.endTime = tNow+0.02;
-            }
-          }
-        } else {
-          if (pending && (tNow - pending.endTime) > 0.08) { detectedNotes.push(Object.assign({}, pending)); pending = null; }
-        }
-        humStatus.innerText = 'Listening... detected: ' + detectedNotes.length;
-        rafId = requestAnimationFrame(step);
-      };
-      rafId = requestAnimationFrame(step);
-    }
-
-    humStartBtn.addEventListener('click', startListening);
-    humStopBtn.addEventListener('click', stopAndMakeMidi);
-    humPlayBtn.addEventListener('click', ()=> previewSequence(detectedNotes, parseInt(document.getElementById('bpm').value||120,10)));
-  })();
-
-  // ------------------ Song Mode + Server integration ------------------
+  // ---------------- App Logic (Hum + Song simplified) ----------------
   (function(){
     const modeSelect = document.getElementById('modeSelect');
     const humPanel = document.getElementById('humPanel');
     const songPanel = document.getElementById('songPanel');
+    const topStatus = document.getElementById('topStatus');
+    const statusBox = document.getElementById('statusBox');
+    const progressBar = document.getElementById('progressBar');
+    const mainLog = document.getElementById('mainLog');
+
     modeSelect.addEventListener('change', ()=> {
-      if (modeSelect.value === 'hum') { humPanel.style.display=''; songPanel.style.display='none'; }
-      else { humPanel.style.display='none'; songPanel.style.display=''; }
+      if (modeSelect.value === 'hum') { humPanel.style.display='block'; songPanel.style.display='none'; }
+      else { humPanel.style.display='none'; songPanel.style.display='block'; }
     });
 
-    const songSource = document.getElementById('songSource');
-    const uploadRow = document.getElementById('uploadRow');
-    const uploadFileInput = document.getElementById('uploadFile');
-    songSource.addEventListener('change', ()=> uploadRow.style.display = (songSource.value === 'upload') ? 'block' : 'none');
+    // element refs
+    const humStartBtn = document.getElementById('humStart');
+    const humStopBtn  = document.getElementById('humStop');
+    const humPlayBtn  = document.getElementById('humPlay');
+    const humDownload = document.getElementById('humDownload');
+    const humLog = document.getElementById('humLog');
 
+    let audioCtx = null, analyser = null, mediaStream = null, rafId = null;
+    let bufferLength = 2048, dataArray = null;
+    let detectedNotes = [], startBase = 0;
+
+    async function humStart() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        setStatus('Mic permission denied or unavailable.');
+        return;
+      }
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = bufferLength;
+      const src = audioCtx.createMediaStreamSource(mediaStream);
+      src.connect(analyser);
+      dataArray = new Float32Array(analyser.fftSize);
+      detectedNotes = [];
+      startBase = audioCtx.currentTime;
+      humStartBtn.disabled = true; humStopBtn.disabled = false; humPlayBtn.disabled = true; humDownload.style.display='none';
+      setStatus('Listening...');
+      loopDetect();
+    }
+
+    function humStop() {
+      if (mediaStream) mediaStream.getTracks().forEach(t=>t.stop());
+      if (audioCtx) audioCtx.close();
+      cancelAnimationFrame(rafId);
+      humStartBtn.disabled=false; humStopBtn.disabled=true;
+      setStatus('Stopped — building MIDI...');
+      // quantize
+      const qMs = parseInt(document.getElementById('quantizeMs').value||120,10);
+      for (let n of detectedNotes) {
+        n.startTime = Math.round(n.startTime * 1000 / qMs) * qMs / 1000;
+        n.endTime   = Math.round(n.endTime   * 1000 / qMs) * qMs / 1000;
+        if (n.endTime <= n.startTime) n.endTime = n.startTime + qMs/1000;
+      }
+      if (!detectedNotes.length) {
+        setStatus('No notes detected. Try singing louder or closer.');
+        humLog.innerText = '';
+        return;
+      }
+      try {
+        const blob = buildMidiFromNotesSimple(detectedNotes, parseInt(document.getElementById('bpm').value||120,10));
+        const url = URL.createObjectURL(blob);
+        humDownload.href = url; humDownload.download = 'hum_capture.mid';
+        humDownload.style.display = 'inline-block'; humDownload.innerText = 'Download .mid';
+        humPlayBtn.disabled = false;
+        humLog.innerText = 'Detected: ' + detectedNotes.map(n=>midiToName(n.midi)).join(' ');
+        setStatus('MIDI ready. Tap Download to save.');
+      } catch (err) {
+        setStatus('MIDI build error: ' + (err.message||err));
+      }
+    }
+
+    function loopDetect() {
+      const sr = audioCtx.sampleRate;
+      analyser.getFloatTimeDomainData(dataArray);
+      const freq = autoCorrelateFloat(dataArray, sr);
+      const tNow = audioCtx.currentTime - startBase;
+      if (freq > 0) {
+        const midi = freqToMidi(freq);
+        if (midi >= 21 && midi <= 108) {
+          const last = detectedNotes.length ? detectedNotes[detectedNotes.length-1] : null;
+          if (!last || Math.abs(last.midi - midi) > 1 || (tNow - last.endTime) > 0.12) {
+            detectedNotes.push({midi:midi, startTime: tNow, endTime: tNow + 0.02});
+          } else {
+            last.endTime = tNow + 0.02;
+          }
+        }
+      } else {
+        // silence - no action; pending notes finalize through timeouts/quantize later
+      }
+      humLog.innerText = 'Listening... notes: ' + detectedNotes.length;
+      rafId = requestAnimationFrame(loopDetect);
+    }
+
+    function humPreview() {
+      previewSequence(detectedNotes, parseInt(document.getElementById('bpm').value||120,10));
+    }
+
+    humStartBtn.addEventListener('click', humStart);
+    humStopBtn.addEventListener('click', humStop);
+    humPlayBtn.addEventListener('click', humPreview);
+
+    // ---------------- Preview function (simple oscillator)
+    function previewSequence(noteSequence, bpm=120) {
+      if (!noteSequence || !noteSequence.length) return;
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const base = noteSequence[0].startTime;
+      let now = ctx.currentTime + 0.12;
+      for (let n of noteSequence) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        const freq = 440 * Math.pow(2, (n.midi - 69)/12);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        g.gain.value = 0.08;
+        osc.connect(g).connect(ctx.destination);
+        const start = now + (n.startTime - base);
+        const dur = Math.max(0.05, n.endTime - n.startTime);
+        osc.start(start); osc.stop(start + dur);
+      }
+      setTimeout(()=>ctx.close(), Math.max(2000, (noteSequence[noteSequence.length-1].endTime - base) * 1000 + 1200));
+    }
+
+    // ---------------- Song mode: Upload or live (client-only simplified) ----------------
     const songStartBtn = document.getElementById('songStart');
     const songStopBtn = document.getElementById('songStop');
-    const songStatus = document.getElementById('songStatus');
-    const songLog = document.getElementById('songLog');
+    const songSource = document.getElementById('songSource');
+    const uploadRow = document.getElementById('uploadRow');
+    const uploadFile = document.getElementById('uploadFile');
+    const useServerSelect = document.getElementById('useServerSeparation');
     const serverUrlInput = document.getElementById('serverUrl');
     const spleeterModeSelect = document.getElementById('spleeterMode');
-    const useServerSelect = document.getElementById('useServerSeparation');
-    const serverProgress = document.getElementById('serverProgress').firstElementChild;
     const stemsContainer = document.getElementById('stemsContainer');
 
-    let captureStream = null;
-    let audioCtx = null;
+    songSource.addEventListener('change', ()=> {
+      uploadRow.style.display = (songSource.value === 'upload') ? 'block' : 'none';
+    });
 
-    function appendSongLog(txt) {
-      const p = document.createElement('div'); p.innerText = txt; songLog.appendChild(p);
-    }
-
-    // Helper to POST file to server for separation
-    async function uploadAndSeparate(file) {
-      const serverUrl = serverUrlInput.value;
-      const spleeterMode = spleeterModeSelect.value;
-      if (!serverUrl) throw new Error('Server URL required for separation.');
-      serverProgress.style.width = '4%';
-      songStatus.innerText = 'Uploading to separation server...';
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('mode', spleeterMode);
-      const res = await fetch(serverUrl + '/api/separate', { method:'POST', body: fd });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error('Server error: ' + text);
+    songStartBtn.addEventListener('click', async () => {
+      // clear previous
+      stemsContainer.innerHTML = ''; mainLog.innerText = '';
+      const source = songSource.value;
+      const useServer = useServerSelect.value === 'yes';
+      setStatus('Starting song mode...');
+      if (source === 'upload') {
+        const file = uploadFile.files[0];
+        if (!file) { setStatus('Choose a file first.'); return; }
+        if (useServer) {
+          // upload to server endpoint for separation
+          try {
+            setStatus('Uploading to separation server...');
+            progressBar.style.width = '20%';
+            const fd = new FormData();
+            fd.append('file', file);
+            fd.append('mode', spleeterModeSelect.value || '2stems');
+            const res = await fetch((serverUrlInput.value || '').replace(/\/$/, '') + '/api/separate', { method: 'POST', body: fd });
+            if (!res.ok) {
+              const txt = await res.text();
+              throw new Error('Server error: ' + txt);
+            }
+            const json = await res.json();
+            progressBar.style.width = '100%';
+            setStatus('Separation complete. Preparing stems...');
+            showStems(json.stems);
+          } catch (err) {
+            setStatus('Separation failed: ' + err.message);
+          }
+        } else {
+          // local client transcription of uploaded file
+          try {
+            setStatus('Decoding file (client)...');
+            const ab = await file.arrayBuffer();
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const buffer = await ctx.decodeAudioData(ab).catch(()=>null);
+            if (!buffer) { setStatus('Could not decode file in this browser. Use upload on a desktop or use server.'); return; }
+            setStatus('Detecting notes (client)...');
+            const notes = await audioBufferToNotes(buffer);
+            if (!notes.length) { setStatus('No notes detected.'); return; }
+            const qMs = parseInt(document.getElementById('quantizeMs').value||120,10);
+            for (let n of notes) {
+              n.startTime = Math.round(n.startTime * 1000 / qMs) * qMs / 1000;
+              n.endTime   = Math.round(n.endTime * 1000 / qMs) * qMs / 1000;
+              if (n.endTime <= n.startTime) n.endTime = n.startTime + qMs/1000;
+            }
+            const blob = buildMidiFromNotesSimple(notes, parseInt(document.getElementById('bpm').value||120,10));
+            const link = createDownloadLink(blob, 'uploaded_song.mid');
+            stemsContainer.appendChild(link);
+            setStatus('MIDI ready.');
+          } catch (err) {
+            setStatus('Processing error: ' + err.message);
+          }
+        }
+      } else if (source === 'mic' || source === 'display') {
+        // start a simple MediaRecorder capture until Stop pressed
+        try {
+          setStatus('Requesting permission for capture...');
+          const stream = (source === 'display') ? await navigator.mediaDevices.getDisplayMedia({audio:true, video:false}) : await navigator.mediaDevices.getUserMedia({audio:true});
+          const options = { mimeType: 'audio/webm' };
+          const recorder = new MediaRecorder(stream, options);
+          const chunks = [];
+          recorder.ondataavailable = e=> { if (e.data && e.data.size) chunks.push(e.data); };
+          recorder.onstop = async () => {
+            setStatus('Recording stopped. Decoding...');
+            const blob = new Blob(chunks, {type:'audio/webm'});
+            const ab = await blob.arrayBuffer();
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const buf = await ctx.decodeAudioData(ab).catch(()=>null);
+            if (!buf) { setStatus('Could not decode recorded audio. Try upload.'); return; }
+            if (useServer) {
+              // send blob to server for separation
+              try {
+                setStatus('Uploading recorded audio to server for separation...');
+                const fd = new FormData();
+                fd.append('file', new File([blob], 'recording.webm', {type: 'audio/webm'}));
+                fd.append('mode', spleeterModeSelect.value || '2stems');
+                const res = await fetch((serverUrlInput.value || '').replace(/\/$/, '') + '/api/separate', { method: 'POST', body: fd });
+                if (!res.ok) throw new Error('Server error');
+                const json = await res.json();
+                setStatus('Separation complete. Preparing stems...');
+                showStems(json.stems);
+              } catch (err) {
+                setStatus('Server separation failed: ' + err.message);
+              }
+            } else {
+              setStatus('Transcribing recorded audio (client)...');
+              const notes = await audioBufferToNotes(buf);
+              if (!notes.length) { setStatus('No notes detected.'); return; }
+              const blobm = buildMidiFromNotesSimple(notes, parseInt(document.getElementById('bpm').value||120,10));
+              stemsContainer.appendChild(createDownloadLink(blobm, 'recording.mid'));
+              setStatus('MIDI ready.');
+            }
+          };
+          recorder.start();
+          setStatus('Recording... press Stop when finished.');
+          songStopBtn.disabled = false;
+          songStopBtn.onclick = () => { recorder.stop(); stream.getTracks().forEach(t=>t.stop()); songStopBtn.disabled=true; };
+        } catch (err) {
+          setStatus('Capture failed: ' + err.message);
+        }
       }
-      // server returns JSON: {jobId, stems: [{name, url}]}
-      const json = await res.json();
-      serverProgress.style.width = '100%';
-      return json;
+    });
+
+    function setStatus(txt){ topStatus.innerText = txt; statusBox.innerText = txt; mainLog.innerText = txt; }
+
+    async function showStems(stems) {
+      stemsContainer.innerHTML = '';
+      if (!stems || !stems.length) { setStatus('No stems returned'); return; }
+      for (let s of stems) {
+        const block = document.createElement('div');
+        block.style.marginBottom = '8px';
+        const btn = document.createElement('button'); btn.innerText = 'Preview ' + s.name; btn.style.marginRight='8px';
+        const trans = document.createElement('button'); trans.innerText = 'Transcribe → MIDI';
+        const href = document.createElement('a'); href.href = s.url; href.innerText = s.name; href.target='_blank'; href.style.marginLeft='8px'; href.style.color='var(--accent)';
+        block.appendChild(btn); block.appendChild(trans); block.appendChild(href);
+        stemsContainer.appendChild(block);
+
+        btn.addEventListener('click', async ()=> {
+          try {
+            setStatus('Downloading stem for preview...');
+            const ab = await fetch(s.url).then(r=>r.arrayBuffer());
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const buff = await ctx.decodeAudioData(ab);
+            const src = ctx.createBufferSource(); src.buffer = buff; src.connect(ctx.destination); src.start();
+            setTimeout(()=>{ try{ src.stop(); ctx.close(); setStatus('Preview finished.'); } catch(e){} }, Math.min(20000, buff.duration*1000));
+          } catch (err) {
+            setStatus('Preview failed: ' + err.message);
+          }
+        });
+
+        trans.addEventListener('click', async ()=> {
+          try {
+            setStatus('Downloading stem for transcription...');
+            const ab = await fetch(s.url).then(r=>r.arrayBuffer());
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const buff = await ctx.decodeAudioData(ab);
+            setStatus('Detecting notes...');
+            const notes = await audioBufferToNotes(buff);
+            if (!notes.length) { setStatus('No notes detected for ' + s.name); return; }
+            // quantize
+            const qMs = parseInt(document.getElementById('quantizeMs').value||120,10);
+            for (let n of notes) {
+              n.startTime = Math.round(n.startTime * 1000 / qMs) * qMs / 1000;
+              n.endTime   = Math.round(n.endTime * 1000 / qMs) * qMs / 1000;
+              if (n.endTime <= n.startTime) n.endTime = n.startTime + qMs/1000;
+            }
+            const blob = buildMidiFromNotesSimple(notes, parseInt(document.getElementById('bpm').value||120,10));
+            const link = createDownloadLink(blob, (s.name.replace(/\.[^/.]+$/,'') || 'stem') + '.mid');
+            stemsContainer.appendChild(link);
+            setStatus('Transcription ready for ' + s.name);
+          } catch (err) {
+            setStatus('Transcription error: ' + err.message);
+          }
+        });
+      }
     }
 
-    // Download stem, decode and run in-browser processing (similar to uploaded file processing)
-    async function fetchArrayBuffer(url) {
-      const r = await fetch(url);
-      const ab = await r.arrayBuffer();
-      return ab;
+    function createDownloadLink(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.innerText = 'Download ' + filename; a.style.display='block'; a.style.color='var(--accent)';
+      return a;
     }
 
-    // core: convert AudioBuffer to note list using chunked autocorrelate detection
+    // audioBuffer -> notes (chunked autocorrelation)
     async function audioBufferToNotes(audioBuffer) {
       const sr = audioBuffer.sampleRate;
-      // Pick first channel
       const data = audioBuffer.getChannelData(0);
       const chunk = 2048;
       const notes = [];
       let pending = null;
       for (let i=0;i<data.length;i+=chunk) {
         const sub = data.subarray(i, Math.min(i+chunk, data.length));
-        const f = autoCorrelate(sub, sr);
+        const f = autoCorrelateFloat(sub, sr);
         const tNow = i / sr;
         if (f > 0) {
           const m = freqToMidi(f);
-          if (!pending) pending = {midi: m, startTime: tNow, endTime: tNow + chunk/sr};
+          if (!pending) pending = {midi:m, startTime:tNow, endTime:tNow + chunk/sr};
           else {
             if (Math.abs(pending.midi - m) > 1) { notes.push(Object.assign({}, pending)); pending = {midi:m, startTime:tNow, endTime:tNow + chunk/sr}; }
             else pending.endTime = tNow + chunk/sr;
           }
         } else {
-          if (pending && (tNow - pending.endTime) > 0.08) { notes.push(Object.assign({}, pending)); pending=null; }
+          if (pending && (tNow - pending.endTime) > 0.08) { notes.push(Object.assign({}, pending)); pending = null; }
         }
       }
       if (pending) notes.push(Object.assign({}, pending));
       return notes;
     }
 
-    // Called to process stems (array of {name,url}) client-side and create MIDI download links
-    async function processStemsClientSide(stems) {
-      stemsContainer.innerHTML = '';
-      for (let s of stems) {
-        // present preview and checkbox
-        const row = document.createElement('div');
-        const chk = document.createElement('input'); chk.type='checkbox'; chk.checked = true; chk.style.marginRight='6px';
-        const label = document.createElement('span'); label.innerText = s.name + ' ';
-        const previewBtn = document.createElement('button'); previewBtn.innerText='Preview'; previewBtn.style.marginLeft='8px';
-        row.appendChild(chk); row.appendChild(label); row.appendChild(previewBtn);
-        stemsContainer.appendChild(row);
-
-        previewBtn.addEventListener('click', async () => {
-          try {
-            songStatus.innerText = 'Downloading stem for preview...';
-            const ab = await fetchArrayBuffer(s.url);
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const buf = await ctx.decodeAudioData(ab);
-            const node = new AudioBufferSourceNode(ctx, {buffer: buf});
-            node.connect(ctx.destination);
-            node.start();
-            songStatus.innerText = 'Playing preview...';
-            setTimeout(()=>{ node.stop(); ctx.close(); songStatus.innerText='Preview ended.'; }, Math.min(20000, buf.duration*1000));
-          } catch (err) { songStatus.innerText = 'Preview failed: ' + err.message; }
-        });
-
-        // Add download & process button for this stem
-        const processBtn = document.createElement('button'); processBtn.innerText = 'Transcribe → MIDI';
-        processBtn.style.marginLeft = '8px';
-        row.appendChild(processBtn);
-        processBtn.addEventListener('click', async () => {
-          try {
-            songStatus.innerText = `Downloading ${s.name}...`;
-            const ab = await fetchArrayBuffer(s.url);
-            const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100 * Math.ceil(1 + 60), 44100); // conservative
-            const offline = new OfflineAudioContext(1, 44100 * Math.ceil(1 + 60), 44100);
-            const audioCtx2 = new (window.AudioContext || window.webkitAudioContext)();
-            const dec = await audioCtx2.decodeAudioData(ab.slice(0));
-            // convert and simplify sampling (we will make an in-memory AudioBuffer for processing)
-            const notes = await audioBufferToNotes(dec);
-            if (!notes || notes.length===0) { songStatus.innerText = `No notes detected for ${s.name}`; return; }
-            // quantize
-            const qMs = parseInt(document.getElementById('quantizeMs').value||120,10);
-            for (let n of notes) {
-              n.startTime = Math.round(n.startTime*1000/qMs)*qMs/1000;
-              n.endTime   = Math.round(n.endTime*1000/qMs)*qMs/1000;
-              if (n.endTime <= n.startTime) n.endTime = n.startTime + qMs/1000;
-            }
-            const midiData = buildMidiFromNotes(notes, parseInt(document.getElementById('bpm').value||120,10));
-            const blob = midiDataToBlob(midiData);
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href=url; a.download = s.name.replace(/\s+/g,'_') + '.mid'; a.innerText='Download ' + a.download; a.style.display='block';
-            stemsContainer.appendChild(a);
-            songStatus.innerText = `Transcription ready for ${s.name}`;
-          } catch (err) {
-            songStatus.innerText = 'Stem transcription failed: ' + err.message; console.error(err);
-          }
-        });
-      }
-    }
-
-    // Process uploaded file or capture
-    async function startSongProcess() {
-      songStartBtn.disabled = true; songStopBtn.disabled = false; songLog.innerHTML=''; stemsContainer.innerHTML='';
-      try {
-        const source = songSource.value;
-        const useServer = useServerSelect.value === 'yes';
-        if (source === 'upload') {
-          const file = uploadFileInput.files[0];
-          if (!file) { songStatus.innerText='Choose a file first.'; songStartBtn.disabled=false; songStopBtn.disabled=true; return; }
-          if (useServer) {
-            songStatus.innerText = 'Uploading file to server for separation...';
-            const job = await uploadAndSeparate(file);
-            songStatus.innerText = 'Separation complete. Received ' + job.stems.length + ' stems.';
-            // process stems list in UI
-            await processStemsClientSide(job.stems);
-          } else {
-            // process uploaded file locally
-            songStatus.innerText = 'Decoding uploaded file...';
-            const ab = await file.arrayBuffer();
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const buf = await ctx.decodeAudioData(ab);
-            // If user asked single -> convert whole buffer to notes & build midi
-            if (document.getElementById('songOutputMode').value === 'single') {
-              songStatus.innerText = 'Transcribing combined audio (client-side)...';
-              const notes = await audioBufferToNotes(buf);
-              if (!notes.length) { songStatus.innerText='No notes detected.'; return; }
-              // quantize
-              const qMs = parseInt(document.getElementById('quantizeMs').value||120,10);
-              for (let n of notes) {
-                n.startTime = Math.round(n.startTime*1000/qMs)*qMs/1000;
-                n.endTime   = Math.round(n.endTime*1000/qMs)*qMs/1000;
-                if (n.endTime <= n.startTime) n.endTime = n.startTime + qMs/1000;
-              }
-              const midiData = buildMidiFromNotes(notes, parseInt(document.getElementById('bpm').value||120,10));
-              const blob = midiDataToBlob(midiData);
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a'); a.href=url; a.download='uploaded_song.mid'; a.innerText='Download uploaded_song.mid'; songLog.appendChild(a);
-              songStatus.innerText='MIDI ready.';
-            } else {
-              // do offline band-splitting (client-side approx)
-              songStatus.innerText = 'Processing approximate bands (client-side)...';
-              // reuse earlier offline processing strategies: create three filtered buffers using OfflineAudioContext is heavy: to keep simple, split by frequency ranges using BiquadFilters and offline rendering (slow but effective)
-              const sr = buf.sampleRate;
-              async function renderWithFilter(filterType, freq, Q=1, gain=0) {
-                const offlineCtx = new OfflineAudioContext(1, buf.length, sr);
-                const src = offlineCtx.createBufferSource(); src.buffer = buf;
-                const f = offlineCtx.createBiquadFilter(); f.type = filterType; f.frequency.value = freq; if (filterType!=='bandpass') f.Q = Q; f.gain = gain;
-                src.connect(f); f.connect(offlineCtx.destination); src.start(0);
-                const rendered = await offlineCtx.startRendering();
-                return rendered;
-              }
-              songStatus.innerText = 'Rendering low band...'; const low = await renderWithFilter('lowshelf',200);
-              songStatus.innerText = 'Rendering mid band...'; const mid = await renderWithFilter('bandpass',1000,0.9);
-              songStatus.innerText = 'Rendering high band...'; const high = await renderWithFilter('highshelf',3000);
-              // detect notes in each stem
-              songStatus.innerText = 'Detecting notes in bands...';
-              async function detectFromBuffer(buff) { return await audioBufferToNotes(buff); }
-              const nLow = await detectFromBuffer(low); const nMid = await detectFromBuffer(mid); const nHigh = await detectFromBuffer(high);
-              if (nLow.length) { const midiData = buildMidiFromNotes(nLow, parseInt(document.getElementById('bpm').value||120,10)); songLog.appendChild(createDownloadLink(midiData, 'uploaded_low.mid')); }
-              if (nMid.length) { const midiData = buildMidiFromNotes(nMid, parseInt(document.getElementById('bpm').value||120,10)); songLog.appendChild(createDownloadLink(midiData, 'uploaded_mid.mid')); }
-              if (nHigh.length) { const midiData = buildMidiFromNotes(nHigh, parseInt(document.getElementById('bpm').value||120,10)); songLog.appendChild(createDownloadLink(midiData, 'uploaded_high.mid')); }
-              songStatus.innerText = 'Processing complete.';
-            }
-          }
-        } else if (source === 'mic' || source === 'display') {
-          // record live stream briefly or until Stop pressed. We'll record to a buffer via MediaRecorder and process when stopped.
-          songStatus.innerText = 'Starting live capture... allow permissions.';
-          const constraints = source === 'display' ? { audio: true } : { audio: true };
-          try {
-            captureStream = (source === 'display') ? await navigator.mediaDevices.getDisplayMedia({audio:true, video:false}) : await navigator.mediaDevices.getUserMedia({audio:true});
-          } catch (err) { songStatus.innerText = 'Permission denied or not supported: ' + err.message; songStartBtn.disabled=false; songStopBtn.disabled=true; return; }
-          // Use MediaRecorder to capture to WebM chunks
-          const options = { mimeType: 'audio/webm' };
-          const mediaRecorder = new MediaRecorder(captureStream, options);
-          let chunks = [];
-          mediaRecorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-          mediaRecorder.onstop = async () => {
-            const blob = new Blob(chunks, {type: 'audio/webm'});
-            // Convert to WAV/ArrayBuffer -> decode
-            const ab = await blob.arrayBuffer();
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const buf = await ctx.decodeAudioData(ab).catch(()=>null);
-            if (!buf) { songStatus.innerText = 'Could not decode recorded audio. Try upload instead.'; return; }
-            // If server separation requested, we need to send the recorded blob to server
-            if (useServer) {
-              // convert blob to file
-              const file = new File([blob], 'live_capture.webm', {type: 'audio/webm'});
-              const job = await uploadAndSeparate(file);
-              songStatus.innerText = 'Separation done. Processing stems...';
-              await processStemsClientSide(job.stems);
-              return;
-            } else {
-              // client-side: if output single -> transcribe combined, else do band split offline
-              songStatus.innerText = 'Transcribing recorded audio (client-side)...';
-              if (document.getElementById('songOutputMode').value === 'single') {
-                const notes = await audioBufferToNotes(buf);
-                if (!notes.length) { songStatus.innerText='No notes detected.'; return; }
-                const qMs = parseInt(document.getElementById('quantizeMs').value||120,10);
-                for (let n of notes) {
-                  n.startTime = Math.round(n.startTime*1000/qMs)*qMs/1000;
-                  n.endTime   = Math.round(n.endTime*1000/qMs)*qMs/1000;
-                }
-                const midiData = buildMidiFromNotes(notes, parseInt(document.getElementById('bpm').value||120,10));
-                songLog.appendChild(createDownloadLink(midiData, 'live_capture.mid'));
-                songStatus.innerText = 'MIDI ready.';
-              } else {
-                // approximate bands using OfflineAudioContext similar to upload case (slow but usable)
-                const sr = buf.sampleRate;
-                const offlineCtx1 = new OfflineAudioContext(1, buf.length, sr);
-                const s1 = offlineCtx1.createBufferSource(); s1.buffer = buf; const f1= offlineCtx1.createBiquadFilter(); f1.type='lowshelf'; f1.frequency.value=200; s1.connect(f1); f1.connect(offlineCtx1.destination); s1.start();
-                const low = await offlineCtx1.startRendering();
-                const offlineCtx2 = new OfflineAudioContext(1, buf.length, sr);
-                const s2 = offlineCtx2.createBufferSource(); s2.buffer = buf; const f2= offlineCtx2.createBiquadFilter(); f2.type='bandpass'; f2.frequency.value=1000; f2.Q=0.8; s2.connect(f2); f2.connect(offlineCtx2.destination); s2.start();
-                const mid = await offlineCtx2.startRendering();
-                const offlineCtx3 = new OfflineAudioContext(1, buf.length, sr);
-                const s3 = offlineCtx3.createBufferSource(); s3.buffer = buf; const f3= offlineCtx3.createBiquadFilter(); f3.type='highshelf'; f3.frequency.value=3000; s3.connect(f3); f3.connect(offlineCtx3.destination); s3.start();
-                const high = await offlineCtx3.startRendering();
-                const nLow = await audioBufferToNotes(low); const nMid = await audioBufferToNotes(mid); const nHigh = await audioBufferToNotes(high);
-                if (nLow.length) songLog.appendChild(createDownloadLink(buildMidiFromNotes(nLow, parseInt(document.getElementById('bpm').value||120,10)), 'live_low.mid'));
-                if (nMid.length) songLog.appendChild(createDownloadLink(buildMidiFromNotes(nMid, parseInt(document.getElementById('bpm').value||120,10)), 'live_mid.mid'));
-                if (nHigh.length) songLog.appendChild(createDownloadLink(buildMidiFromNotes(nHigh, parseInt(document.getElementById('bpm').value||120,10)), 'live_high.mid'));
-                songStatus.innerText='Band processing done.';
-              }
-            }
-          };
-          mediaRecorder.start();
-          songStatus.innerText = 'Recording... press Stop to finish.';
-          // attach global stop handler
-          songStopBtn.onclick = () => {
-            mediaRecorder.stop();
-            if (captureStream) captureStream.getTracks().forEach(t=>t.stop());
-            songStartBtn.disabled=false; songStopBtn.disabled=true;
-          };
-        }
-      } catch (err) {
-        songStatus.innerText = 'Error: ' + err.message;
-        songStartBtn.disabled=false; songStopBtn.disabled=true;
-        console.error(err);
-      }
-    }
-
-    function createDownloadLink(midiData, filename) {
-      const blob = midiDataToBlob(midiData);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = filename; a.innerText = 'Download ' + filename; a.style.display='block';
-      return a;
-    }
-
-    songStartBtn.addEventListener('click', startSongProcess);
-    songStopBtn.addEventListener('click', ()=> { /* stop handled elsewhere for live */ songStopBtn.disabled=true; songStartBtn.disabled=false; });
+    // expose for debugging in mobile dev console
+    window._app = { buildMidiFromNotesSimple };
 
   })();
 
